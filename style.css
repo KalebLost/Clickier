@@ -55,3 +55,32 @@ pre {
 .cell.wrong {
   color: var(--bad);
 }
+
+.cell.hint {
+  color: var(--hint);
+  font-weight: bold;
+}
+
+#shop button {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  white-space: pre;
+  cursor: pointer;
+}
+
+#shop button:hover:enabled,
+#shop button:focus-visible {
+  color: var(--bright);
+  outline: none;
+}
+
+#shop button:disabled {
+  color: var(--dim);
+  cursor: default;
+}

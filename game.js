@@ -8,6 +8,7 @@ const BORDER = "+" + "-".repeat(LINE_WIDTH - 2) + "+";
 const statusEl = document.getElementById("status");
 const gridEl = document.getElementById("grid");
 const logEl = document.getElementById("log");
+const shopEl = document.getElementById("shop");
 
 document.documentElement.style.setProperty("--chars", LINE_WIDTH);
 
@@ -27,13 +28,52 @@ const WRONG_CLICK_PENALTY = 2;
 const ROUND_SECONDS = 12;
 const CLEAR_PAUSE_MS = 400;
 const TIME_BAR_WIDTH = 10;
+const BASE_WORDS = 2;
+const TOP_TIER_CHANCE = 0.6;
+const HINT_MS = 1000;
 
-const state = { score: 0, combo: 0 };
+const UPGRADES = [
+  { key: "vocabulary", name: "Vocabulary", info: "harder words, more points", baseCost: 40, growth: 5, max: 3 },
+  { key: "clock", name: "Clock speed", info: "+2s on every grid", baseCost: 15, growth: 1.6, max: 8 },
+  { key: "density", name: "Density", info: "+1 word on every grid", baseCost: 25, growth: 2, max: 6 },
+  { key: "highlighter", name: "Highlighter", info: "flashes a letter of a word", baseCost: 30, growth: 2, max: 5 },
+  { key: "combo", name: "Combo", info: "streaks multiply points", baseCost: 50, growth: 2.2, max: 5 },
+];
+
+const state = {
+  score: 0,
+  combo: 0,
+  upgrades: Object.fromEntries(UPGRADES.map((upgrade) => [upgrade.key, 0])),
+};
 let round = null;
+
+function upgradeCost(upgrade) {
+  return Math.round(upgrade.baseCost * upgrade.growth ** state.upgrades[upgrade.key]);
+}
+
+// Each Combo level adds 10% per word in the streak, counting up to 10 words.
+function comboMultiplier() {
+  return 1 + state.upgrades.combo * 0.1 * Math.min(state.combo, 10);
+}
 
 function wordPoints(text) {
   const tier = WORDS.findIndex((tierWords) => tierWords.includes(text));
-  return text.length * TIER_POINTS[tier];
+  return Math.round(text.length * TIER_POINTS[tier] * comboMultiplier());
+}
+
+// Mostly picks from the newest tier, so upgrades are felt right away.
+function chooseWords() {
+  const topTier = state.upgrades.vocabulary;
+  const chosen = new Set();
+  while (chosen.size < BASE_WORDS + state.upgrades.density) {
+    const tier = Math.random() < TOP_TIER_CHANCE ? topTier : randomInt(topTier + 1);
+    chosen.add(pick(WORDS[tier]));
+  }
+  return [...chosen];
+}
+
+function hintSeconds() {
+  return 8 - state.upgrades.highlighter;
 }
 
 // Spans are the only elements inside the grid, so a cell's position is its index.
@@ -73,29 +113,78 @@ function log(message) {
   logEl.textContent = [BORDER, frame(("> " + message).slice(0, INNER_WIDTH)), BORDER].join("\n");
 }
 
+const shopButtons = UPGRADES.map((upgrade) => {
+  const button = document.createElement("button");
+  button.addEventListener("click", () => buy(upgrade));
+  return button;
+});
+
+function renderShop() {
+  UPGRADES.forEach((upgrade, index) => {
+    const level = state.upgrades[upgrade.key];
+    const maxed = level >= upgrade.max;
+    const cost = upgradeCost(upgrade);
+    const left = `[${index + 1}] ${upgrade.name} ${level}/${upgrade.max}`;
+    const right = maxed ? "MAX" : `${cost}p`;
+    const dots = ".".repeat(Math.max(0, INNER_WIDTH - left.length - right.length - 2));
+
+    const button = shopButtons[index];
+    button.textContent = frame(`${left} ${dots} ${right}`) + "\n" + frame("    " + upgrade.info);
+    button.disabled = maxed || state.score < cost;
+  });
+}
+
+function changeScore(amount) {
+  state.score = Math.max(0, state.score + amount);
+  renderShop();
+}
+
+function buy(upgrade) {
+  const cost = upgradeCost(upgrade);
+  if (state.upgrades[upgrade.key] >= upgrade.max || state.score < cost) return;
+
+  state.upgrades[upgrade.key] += 1;
+  changeScore(-cost);
+  log(`${upgrade.name} up! applies next grid`);
+  renderStatus();
+}
+
 function newRound() {
-  const wordList = [pick(WORDS[0]), pick(WORDS[0])];
-  const seconds = ROUND_SECONDS;
+  const seconds = ROUND_SECONDS + state.upgrades.clock * 2;
+  const vowelRatio = 0.1 + state.upgrades.vocabulary * 0.08;
   round = {
-    grid: generateGrid(COLS, ROWS, wordList, 0.1, DICTIONARY),
+    grid: generateGrid(COLS, ROWS, chooseWords(), vowelRatio, DICTIONARY),
     found: new Set(),
     seconds,
     endsAt: performance.now() + seconds * 1000,
+    nextHintAt: performance.now() + hintSeconds() * 1000,
     cleared: false,
   };
   renderGrid();
 }
 
+function showHint() {
+  const hidden = round.grid.words.filter((word, index) => !round.found.has(index));
+  const word = pick(hidden);
+  const cell = cellAt(word.row, word.col);
+  cell.classList.add("hint");
+  setTimeout(() => cell.classList.remove("hint"), HINT_MS);
+  round.nextHintAt = performance.now() + hintSeconds() * 1000;
+}
+
 // Clearing a grid pays one point per second left, then holds it on screen briefly.
 function clearRound() {
   const bonus = Math.ceil((round.endsAt - performance.now()) / 1000);
-  state.score += bonus;
+  changeScore(bonus);
   log(`grid clear! +${bonus} time bonus`);
   round.cleared = true;
   round.endsAt = performance.now() + CLEAR_PAUSE_MS;
 }
 
 function tick() {
+  const hintsOn = state.upgrades.highlighter > 0 && !round.cleared;
+  if (hintsOn && performance.now() >= round.nextHintAt) showHint();
+
   if (performance.now() >= round.endsAt) {
     if (!round.cleared) {
       const missed = round.grid.words.filter((word, index) => !round.found.has(index));
@@ -119,16 +208,17 @@ function findWord(index) {
   }
 
   const points = wordPoints(text);
-  state.score += points;
+  const multiplier = comboMultiplier();
+  changeScore(points);
   state.combo += 1;
-  log(`+${points} ${text}`);
+  log(`+${points} ${text}` + (multiplier > 1 ? ` x${multiplier.toFixed(1)}` : ""));
 
   if (round.found.size === round.grid.words.length) clearRound();
   renderStatus();
 }
 
 function wrongClick(cell) {
-  state.score = Math.max(0, state.score - WRONG_CLICK_PENALTY);
+  changeScore(-WRONG_CLICK_PENALTY);
   state.combo = 0;
   log(`-${WRONG_CLICK_PENALTY} not a word`);
   renderStatus();
@@ -146,7 +236,21 @@ gridEl.addEventListener("click", (event) => {
   else findWord(wordIndex);
 });
 
+// Number keys buy upgrades. Modifiers are skipped so browser shortcuts still work.
+document.addEventListener("keydown", (event) => {
+  if (event.repeat || event.metaKey || event.ctrlKey || event.altKey) return;
+  const upgrade = UPGRADES[Number(event.key) - 1];
+  if (upgrade) buy(upgrade);
+});
+
+const shopTitle = document.createElement("pre");
+shopTitle.textContent = frame("SHOP - click or press 1-5");
+const shopEnd = document.createElement("pre");
+shopEnd.textContent = BORDER;
+shopEl.append(shopTitle, ...shopButtons, shopEnd);
+
 log("find the hidden words");
 newRound();
+renderShop();
 renderStatus();
 setInterval(tick, 100);
