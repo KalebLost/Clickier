@@ -1,0 +1,34 @@
+:root {
+  --bg: #0b0f0b;
+  --text: #4fbf6b;
+  --dim: #2f6b3f;
+  --bright: #c8ffd4;
+  --bad: #ff5f56;
+  --hint: #ffd866;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 16px;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* --chars is set from game.js. The font shrinks so a full line always fits. */
+#screen {
+  font-family: Menlo, Consolas, "DejaVu Sans Mono", monospace;
+  font-size: min(18px, calc((100vw - 32px) / (var(--chars) * 0.61)));
+  line-height: 1.4;
+}
+
+pre {
+  margin: 0;
+  font: inherit;
+}
