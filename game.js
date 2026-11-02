@@ -292,7 +292,7 @@ shopEnd.textContent = BORDER;
 const resetButton = document.createElement("button");
 resetButton.textContent = frame("[x] erase progress");
 resetButton.addEventListener("click", resetProgress);
-shopEl.append(shopTitle, ...shopButtons, shopEnd, resetButton);
+shopEl.append(shopTitle, ...shopButtons, resetButton, shopEnd);
 
 load();
 log("find the hidden words");
