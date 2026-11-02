@@ -9,6 +9,9 @@ const statusEl = document.getElementById("status");
 const gridEl = document.getElementById("grid");
 const logEl = document.getElementById("log");
 const shopEl = document.getElementById("shop");
+const tutorialEl = document.getElementById("tutorial");
+const tutorialTextEl = document.getElementById("tutorial-text");
+const tutorialNextEl = document.getElementById("tutorial-next");
 
 document.documentElement.style.setProperty("--chars", LINE_WIDTH);
 
@@ -33,6 +36,16 @@ const TOP_TIER_CHANCE = 0.6;
 const HINT_MS = 1000;
 const SAVE_KEY = "clickier.save.v1";
 
+// The first TUTORIAL_WORDS steps each wait for a word. The rest wait for a button.
+const TUTORIAL_WORDS = 3;
+const TUTORIAL_TEXT = [
+  "Real words hide in these letters. Click any letter of a yellow word to score it.",
+  "Nice! Longer words pay more. Click the next one.",
+  "Careful: clicking a letter outside a word costs 2 points. One word left!",
+  "Spend your points in the SHOP below on better words, more time, hints and combos. Upgrades start on the next grid.",
+  "No more yellow words, and the clock starts now. You're on your own. Good luck!",
+];
+
 const UPGRADES = [
   { key: "vocabulary", name: "Vocabulary", info: "harder words, more points", baseCost: 40, growth: 5, max: 3 },
   { key: "clock", name: "Clock speed", info: "+2s on every grid", baseCost: 15, growth: 1.6, max: 8 },
@@ -44,9 +57,11 @@ const UPGRADES = [
 const state = {
   score: 0,
   combo: 0,
+  tutorialDone: false,
   upgrades: Object.fromEntries(UPGRADES.map((upgrade) => [upgrade.key, 0])),
 };
 let round = null;
+let tutorialStep = 0;
 
 function upgradeCost(upgrade) {
   return Math.round(upgrade.baseCost * upgrade.growth ** state.upgrades[upgrade.key]);
@@ -70,6 +85,12 @@ function chooseWords() {
     const tier = Math.random() < TOP_TIER_CHANCE ? topTier : randomInt(topTier + 1);
     chosen.add(pick(WORDS[tier]));
   }
+  return [...chosen];
+}
+
+function chooseTutorialWords() {
+  const chosen = new Set();
+  while (chosen.size < TUTORIAL_WORDS) chosen.add(pick(WORDS[0]));
   return [...chosen];
 }
 
@@ -114,6 +135,42 @@ function log(message) {
   logEl.textContent = [BORDER, frame(("> " + message).slice(0, INNER_WIDTH)), BORDER].join("\n");
 }
 
+// Splits text into lines that fit inside the frame, breaking between words.
+function wrapText(text) {
+  const lines = [""];
+  for (const word of text.split(" ")) {
+    const line = lines[lines.length - 1];
+    if (line && line.length + 1 + word.length > INNER_WIDTH) lines.push(word);
+    else lines[lines.length - 1] = line ? `${line} ${word}` : word;
+  }
+  return lines;
+}
+
+function renderTutorial() {
+  tutorialEl.hidden = state.tutorialDone;
+  if (state.tutorialDone) return;
+
+  const lastStep = tutorialStep === TUTORIAL_TEXT.length - 1;
+  tutorialTextEl.textContent = wrapText(TUTORIAL_TEXT[tutorialStep]).map(frame).join("\n");
+  tutorialNextEl.hidden = tutorialStep < TUTORIAL_WORDS;
+  tutorialNextEl.textContent = frame(lastStep ? "[ start playing ]" : "[ next ]");
+}
+
+function advanceTutorial() {
+  if (tutorialStep < TUTORIAL_TEXT.length - 1) {
+    tutorialStep += 1;
+    renderTutorial();
+    return;
+  }
+
+  state.tutorialDone = true;
+  save();
+  log("the clock is running");
+  newRound();
+  renderTutorial();
+  renderStatus();
+}
+
 const shopButtons = UPGRADES.map((upgrade) => {
   const button = document.createElement("button");
   button.addEventListener("click", () => buy(upgrade));
@@ -139,7 +196,8 @@ function renderShop() {
 // The game still works then, it just won't remember progress.
 function save() {
   try {
-    localStorage.setItem(SAVE_KEY, JSON.stringify({ score: state.score, upgrades: state.upgrades }));
+    const { score, tutorialDone, upgrades } = state;
+    localStorage.setItem(SAVE_KEY, JSON.stringify({ score, tutorialDone, upgrades }));
   } catch {}
 }
 
@@ -155,6 +213,8 @@ function load() {
   if (!saved) return;
 
   state.score = savedCount(saved.score);
+  // Saves from before the tutorial existed have no flag, and those players know the game.
+  state.tutorialDone = saved.tutorialDone !== false;
   for (const upgrade of UPGRADES) {
     state.upgrades[upgrade.key] = Math.min(upgrade.max, savedCount(saved.upgrades?.[upgrade.key]));
   }
@@ -168,10 +228,13 @@ function resetProgress() {
   } catch {}
   state.score = 0;
   state.combo = 0;
+  state.tutorialDone = false;
+  tutorialStep = 0;
   for (const upgrade of UPGRADES) state.upgrades[upgrade.key] = 0;
   log("progress erased");
   newRound();
   renderShop();
+  renderTutorial();
   renderStatus();
 }
 
@@ -194,8 +257,11 @@ function buy(upgrade) {
 function newRound() {
   const seconds = ROUND_SECONDS + state.upgrades.clock * 2;
   const vowelRatio = 0.1 + state.upgrades.vocabulary * 0.08;
+  const tutorial = !state.tutorialDone;
+  const wordList = tutorial ? chooseTutorialWords() : chooseWords();
   round = {
-    grid: generateGrid(COLS, ROWS, chooseWords(), vowelRatio, DICTIONARY),
+    grid: generateGrid(COLS, ROWS, wordList, vowelRatio, DICTIONARY),
+    tutorial,
     found: new Set(),
     seconds,
     endsAt: performance.now() + seconds * 1000,
@@ -203,6 +269,13 @@ function newRound() {
     cleared: false,
   };
   renderGrid();
+  if (tutorial) highlightWords();
+}
+
+function highlightWords() {
+  for (const { text, row, col } of round.grid.words) {
+    for (let i = 0; i < text.length; i++) cellAt(row, col + i).classList.add("hint");
+  }
 }
 
 function showHint() {
@@ -224,6 +297,13 @@ function clearRound() {
 }
 
 function tick() {
+  // The clock stays full until the tutorial ends.
+  if (round.tutorial) {
+    round.endsAt = performance.now() + round.seconds * 1000;
+    renderStatus();
+    return;
+  }
+
   const hintsOn = state.upgrades.highlighter > 0 && !round.cleared;
   if (hintsOn && performance.now() >= round.nextHintAt) showHint();
 
@@ -246,6 +326,7 @@ function findWord(index) {
   for (let i = 0; i < text.length; i++) {
     const cell = cellAt(row, col + i);
     cell.textContent = cell.textContent.toUpperCase();
+    cell.classList.remove("hint");
     cell.classList.add("found");
   }
 
@@ -256,6 +337,7 @@ function findWord(index) {
   log(`+${points} ${text}` + (multiplier > 1 ? ` x${multiplier.toFixed(1)}` : ""));
 
   if (round.found.size === round.grid.words.length) clearRound();
+  if (round.tutorial) advanceTutorial();
   renderStatus();
 }
 
@@ -294,9 +376,13 @@ resetButton.textContent = frame("[x] erase progress");
 resetButton.addEventListener("click", resetProgress);
 shopEl.append(shopTitle, ...shopButtons, resetButton, shopEnd);
 
+document.getElementById("tutorial-end").textContent = BORDER;
+tutorialNextEl.addEventListener("click", advanceTutorial);
+
 load();
 log("find the hidden words");
 newRound();
 renderShop();
+renderTutorial();
 renderStatus();
 setInterval(tick, 100);

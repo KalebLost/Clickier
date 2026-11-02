@@ -61,7 +61,7 @@ pre {
   font-weight: bold;
 }
 
-#shop button {
+button {
   display: block;
   width: 100%;
   padding: 0;
@@ -74,13 +74,22 @@ pre {
   cursor: pointer;
 }
 
-#shop button:hover:enabled,
-#shop button:focus-visible {
+button:hover:enabled,
+button:focus-visible {
   color: var(--bright);
   outline: none;
 }
 
-#shop button:disabled {
+button:disabled {
   color: var(--dim);
   cursor: default;
+}
+
+button[hidden] {
+  display: none;
+}
+
+#tutorial-text,
+#tutorial-next {
+  color: var(--hint);
 }

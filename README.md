@@ -5,6 +5,7 @@ letters, click them for points, and spend the points on upgrades.
 
 ## How to play
 
+- A short tutorial runs the first time you play.
 - Click any letter of a hidden word to score it. Longer, harder words pay more.
 - Clicking a letter that isn't part of a word costs 2 points and resets your combo.
 - Clear every word before time runs out for a bonus.
