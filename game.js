@@ -24,6 +24,9 @@ function frameSplit(left, right) {
 const DICTIONARY = WORDS.flat();
 const TIER_POINTS = [1, 3, 8, 20];
 const WRONG_CLICK_PENALTY = 2;
+const ROUND_SECONDS = 12;
+const CLEAR_PAUSE_MS = 400;
+const TIME_BAR_WIDTH = 10;
 
 const state = { score: 0, combo: 0 };
 let round = null;
@@ -51,11 +54,17 @@ function renderGrid() {
   gridEl.innerHTML = lines.join("\n");
 }
 
+function timeBar() {
+  const left = Math.max(0, round.endsAt - performance.now()) / (round.seconds * 1000);
+  const filled = Math.ceil(left * TIME_BAR_WIDTH);
+  return "[" + "#".repeat(filled) + ".".repeat(TIME_BAR_WIDTH - filled) + "]";
+}
+
 function renderStatus() {
   statusEl.textContent = [
     BORDER,
     frameSplit("CLICKIER", `SCORE: ${state.score}`),
-    frameSplit("", `COMBO: ${state.combo}`),
+    frameSplit(`TIME ${timeBar()}`, `COMBO: ${state.combo}`),
     BORDER,
   ].join("\n");
 }
@@ -66,8 +75,36 @@ function log(message) {
 
 function newRound() {
   const wordList = [pick(WORDS[0]), pick(WORDS[0])];
-  round = { grid: generateGrid(COLS, ROWS, wordList, 0.1, DICTIONARY), found: new Set() };
+  const seconds = ROUND_SECONDS;
+  round = {
+    grid: generateGrid(COLS, ROWS, wordList, 0.1, DICTIONARY),
+    found: new Set(),
+    seconds,
+    endsAt: performance.now() + seconds * 1000,
+    cleared: false,
+  };
   renderGrid();
+}
+
+// Clearing a grid pays one point per second left, then holds it on screen briefly.
+function clearRound() {
+  const bonus = Math.ceil((round.endsAt - performance.now()) / 1000);
+  state.score += bonus;
+  log(`grid clear! +${bonus} time bonus`);
+  round.cleared = true;
+  round.endsAt = performance.now() + CLEAR_PAUSE_MS;
+}
+
+function tick() {
+  if (performance.now() >= round.endsAt) {
+    if (!round.cleared) {
+      const missed = round.grid.words.filter((word, index) => !round.found.has(index));
+      log("missed: " + missed.map((word) => word.text).join(", "));
+      state.combo = 0;
+    }
+    newRound();
+  }
+  renderStatus();
 }
 
 function findWord(index) {
@@ -85,9 +122,9 @@ function findWord(index) {
   state.score += points;
   state.combo += 1;
   log(`+${points} ${text}`);
-  renderStatus();
 
-  if (round.found.size === round.grid.words.length) newRound();
+  if (round.found.size === round.grid.words.length) clearRound();
+  renderStatus();
 }
 
 function wrongClick(cell) {
@@ -102,13 +139,14 @@ function wrongClick(cell) {
 
 gridEl.addEventListener("click", (event) => {
   const cell = event.target.closest(".cell");
-  if (!cell) return;
+  if (!cell || round.cleared) return;
 
   const wordIndex = round.grid.owners[cell.dataset.row][cell.dataset.col];
   if (wordIndex === -1) wrongClick(cell);
   else findWord(wordIndex);
 });
 
-renderStatus();
 log("find the hidden words");
 newRound();
+renderStatus();
+setInterval(tick, 100);
