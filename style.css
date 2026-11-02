@@ -45,3 +45,13 @@ pre {
 .cell:hover {
   color: var(--bright);
 }
+
+.cell.found {
+  color: var(--bright);
+  font-weight: bold;
+  cursor: default;
+}
+
+.cell.wrong {
+  color: var(--bad);
+}
