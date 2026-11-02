@@ -31,6 +31,7 @@ const TIME_BAR_WIDTH = 10;
 const BASE_WORDS = 2;
 const TOP_TIER_CHANCE = 0.6;
 const HINT_MS = 1000;
+const SAVE_KEY = "clickier.save.v1";
 
 const UPGRADES = [
   { key: "vocabulary", name: "Vocabulary", info: "harder words, more points", baseCost: 40, growth: 5, max: 3 },
@@ -134,9 +135,50 @@ function renderShop() {
   });
 }
 
+// Browsers can block storage, for example in private windows.
+// The game still works then, it just won't remember progress.
+function save() {
+  try {
+    localStorage.setItem(SAVE_KEY, JSON.stringify({ score: state.score, upgrades: state.upgrades }));
+  } catch {}
+}
+
+function savedCount(value) {
+  return Number.isInteger(value) && value > 0 ? value : 0;
+}
+
+function load() {
+  let saved = null;
+  try {
+    saved = JSON.parse(localStorage.getItem(SAVE_KEY));
+  } catch {}
+  if (!saved) return;
+
+  state.score = savedCount(saved.score);
+  for (const upgrade of UPGRADES) {
+    state.upgrades[upgrade.key] = Math.min(upgrade.max, savedCount(saved.upgrades?.[upgrade.key]));
+  }
+}
+
+function resetProgress() {
+  if (!window.confirm("Erase your score and upgrades?")) return;
+
+  try {
+    localStorage.removeItem(SAVE_KEY);
+  } catch {}
+  state.score = 0;
+  state.combo = 0;
+  for (const upgrade of UPGRADES) state.upgrades[upgrade.key] = 0;
+  log("progress erased");
+  newRound();
+  renderShop();
+  renderStatus();
+}
+
 function changeScore(amount) {
   state.score = Math.max(0, state.score + amount);
   renderShop();
+  save();
 }
 
 function buy(upgrade) {
@@ -247,8 +289,12 @@ const shopTitle = document.createElement("pre");
 shopTitle.textContent = frame("SHOP - click or press 1-5");
 const shopEnd = document.createElement("pre");
 shopEnd.textContent = BORDER;
-shopEl.append(shopTitle, ...shopButtons, shopEnd);
+const resetButton = document.createElement("button");
+resetButton.textContent = frame("[x] erase progress");
+resetButton.addEventListener("click", resetProgress);
+shopEl.append(shopTitle, ...shopButtons, shopEnd, resetButton);
 
+load();
 log("find the hidden words");
 newRound();
 renderShop();
