@@ -21,6 +21,33 @@ function frameSplit(left, right) {
   return frame(left + right.padStart(INNER_WIDTH - left.length));
 }
 
-statusEl.textContent = [BORDER, frameSplit("CLICKIER", "SCORE: 0"), BORDER].join("\n");
-gridEl.textContent = frame("loading letters...");
+const DICTIONARY = WORDS.flat();
+
+let round = null;
+
+// Each letter is a span so it can be clicked. It includes the space after it,
+// which makes the click target wider on touch screens.
+function renderGrid() {
+  const lines = round.grid.letters.map((rowLetters, row) => {
+    const cells = rowLetters.map((letter, col) => {
+      const gap = col < COLS - 1 ? " " : "";
+      return `<span class="cell" data-row="${row}" data-col="${col}">${letter}${gap}</span>`;
+    });
+    return "| " + cells.join("") + " |";
+  });
+  gridEl.innerHTML = lines.join("\n");
+}
+
+function renderStatus() {
+  statusEl.textContent = [BORDER, frameSplit("CLICKIER", "SCORE: 0"), BORDER].join("\n");
+}
+
+function newRound() {
+  const wordList = [pick(WORDS[0]), pick(WORDS[0])];
+  round = { grid: generateGrid(COLS, ROWS, wordList, 0.1, DICTIONARY) };
+  renderGrid();
+}
+
+renderStatus();
 logEl.textContent = BORDER;
+newRound();

@@ -32,3 +32,16 @@ pre {
   margin: 0;
   font: inherit;
 }
+
+#grid {
+  user-select: none;
+  touch-action: manipulation;
+}
+
+.cell {
+  cursor: pointer;
+}
+
+.cell:hover {
+  color: var(--bright);
+}
